@@ -183,37 +183,22 @@
     return (tmp.textContent || '').trim();
   }
 
-  function textOf(parent, tag) {
-    const el = parent.querySelector(tag);
-    return el ? el.textContent.trim() : '';
-  }
+  const RSS2JSON_API_KEY = 'xtz9hywuzlqzajp5284utiyn1f0rvykkuhce6tar';
 
   async function fetchFeed(feed) {
-    const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(feed.url);
+    const proxyUrl = 'https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(feed.url) + '&api_key=' + RSS2JSON_API_KEY;
     try {
       const res = await fetch(proxyUrl);
-      const xmlText = await res.text();
-      const xml = new DOMParser().parseFromString(xmlText, 'text/xml');
-      if (xml.querySelector('parsererror')) throw new Error('bad xml');
-
-      // Supports both RSS <item> and Atom <entry>
-      const nodes = Array.from(xml.querySelectorAll('item, entry'));
-
-      return nodes.map(node => {
-        let link = textOf(node, 'link');
-        if (!link) {
-          const linkEl = node.querySelector('link');
-          link = linkEl ? (linkEl.getAttribute('href') || '') : '';
-        }
-        return {
-          title: textOf(node, 'title'),
-          link: link,
-          pubDate: textOf(node, 'pubDate') || textOf(node, 'published') || textOf(node, 'updated'),
-          description: stripHtml(textOf(node, 'description') || textOf(node, 'summary') || textOf(node, 'content')).slice(0, 220),
-          tag: feed.tag,
-          alwaysShow: feed.alwaysShow
-        };
-      });
+      const data = await res.json();
+      if (data.status !== 'ok') throw new Error('bad status: ' + (data.message || 'unknown'));
+      return data.items.map(it => ({
+        title: it.title,
+        link: it.link,
+        pubDate: it.pubDate,
+        description: stripHtml(it.description).slice(0, 220),
+        tag: feed.tag,
+        alwaysShow: feed.alwaysShow
+      }));
     } catch (e) {
       console.error('Feed failed:', feed.tag, e);
       return [];
