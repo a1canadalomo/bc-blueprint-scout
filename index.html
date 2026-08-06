@@ -156,4 +156,123 @@
   ];
 
   const HOUSING_KEYWORDS = [
-    'housing','real
+    'housing','real estate','rent','renter','tenant','condo','presale','pre-sale',
+    'developer','development','rezon','zoning','mortgage','property','construction',
+    'homeowner','affordab','strata','landlord','apartment','townhouse','build',
+    'interest rate','bank of canada','cmhc','vacancy','township','receivership',
+    'creditor protection','builders lien','foreclosure'
+  ];
+
+  let allItems = [];
+
+  function isHousingRelevant(item) {
+    const text = (item.title + ' ' + (item.description || '')).toLowerCase();
+    return HOUSING_KEYWORDS.some(k => text.includes(k));
+  }
+
+  function relTime(dateStr) {
+    const d = new Date(dateStr);
+    if (isNaN(d)) return '';
+    const diffMs = Date.now() - d.getTime();
+    const hrs = Math.floor(diffMs / 3600000);
+    if (hrs < 1) return 'just now';
+    if (hrs < 24) return hrs + 'h ago';
+    const days = Math.floor(hrs / 24);
+    if (days < 7) return days + 'd ago';
+    return d.toLocaleDateString('en-CA', { month: 'short', day: 'numeric' });
+  }
+
+  function stripHtml(html) {
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html || '';
+    return (tmp.textContent || '').trim();
+  }
+
+  async function fetchFeed(feed) {
+    const proxyUrl = 'https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(feed.url);
+    try {
+      const res = await fetch(proxyUrl);
+      const data = await res.json();
+      if (data.status !== 'ok') throw new Error('bad status');
+      return data.items.map(it => ({
+        title: it.title,
+        link: it.link,
+        pubDate: it.pubDate,
+        description: stripHtml(it.description).slice(0, 220),
+        tag: feed.tag,
+        alwaysShow: feed.alwaysShow
+      }));
+    } catch (e) {
+      console.error('Feed failed:', feed.tag, e);
+      return [];
+    }
+  }
+
+  async function loadAll() {
+    const listEl = document.getElementById('nsc-list');
+    const updatedEl = document.getElementById('nsc-updated');
+    listEl.innerHTML = '<div class="nsc-status">Scanning 9 BC housing sources…</div>';
+
+    const results = await Promise.all(FEEDS.map(fetchFeed));
+    let items = results.flat();
+
+    items = items.filter(it => it.alwaysShow || isHousingRelevant(it));
+
+    const seen = new Set();
+    items = items.filter(it => {
+      const key = it.title.toLowerCase().trim();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    items.sort((a, b) => new Date(b.pubDate) - new Date(a.pubDate));
+    items = items.slice(0, 30);
+    allItems = items;
+
+    updatedEl.textContent = items.length
+      ? 'Last scanned ' + new Date().toLocaleString('en-CA', { hour: 'numeric', minute: '2-digit', month: 'short', day: 'numeric' })
+      : 'Scan failed — try again';
+
+    if (!items.length) {
+      listEl.innerHTML = '<div class="nsc-status">Couldn\'t reach any sources right now. Hit "Rescan sources" to retry.</div>';
+      document.getElementById('nsc-count').textContent = '';
+      return;
+    }
+
+    listEl.innerHTML = '<div class="nsc-grid">' + items.map(it => `
+      <a class="nsc-item" href="${it.link}" target="_blank" rel="noopener">
+        <span class="nsc-item-tag">${it.tag}</span>
+        <span class="nsc-item-main">
+          <div class="nsc-item-title">${it.title}</div>
+        </span>
+        <span class="nsc-item-date">${relTime(it.pubDate)}</span>
+      </a>
+    `).join('') + '</div>';
+
+    document.getElementById('nsc-count').textContent = items.length + ' stories from 9 sources · click any headline to read';
+  }
+
+  function copyHeadlines() {
+    const btn = document.getElementById('nsc-copy-btn');
+    if (!allItems.length) return;
+
+    const text = allItems.map((it, i) =>
+      `${i + 1}. [${it.tag}] ${it.title}\n${it.link}`
+    ).join('\n\n');
+
+    navigator.clipboard.writeText(text).then(() => {
+      const original = btn.textContent;
+      btn.textContent = 'Copied ✓';
+      setTimeout(() => { btn.textContent = original; }, 1800);
+    }).catch(() => {
+      alert('Copy failed — select and copy manually:\n\n' + text);
+    });
+  }
+
+  document.getElementById('nsc-refresh').addEventListener('click', loadAll);
+  document.getElementById('nsc-copy-btn').addEventListener('click', copyHeadlines);
+
+  loadAll();
+})();
+</script>
