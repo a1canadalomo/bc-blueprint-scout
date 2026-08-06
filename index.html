@@ -136,7 +136,7 @@
     </div>
   </div>
   <div class="nsc-body">
-    <div id="nsc-list"><div class="nsc-status">Scanning 9 BC housing sources…</div></div>
+    <div id="nsc-list"><div class="nsc-status">Scanning STOREYS, Better Dwelling, CBC BC, BIV, and City of Vancouver…</div></div>
     <div class="nsc-footer" id="nsc-count"></div>
   </div>
 </div>
@@ -146,21 +146,16 @@
   const FEEDS = [
     { tag: 'STOREYS', url: 'https://storeys.com/feeds/feed.rss', alwaysShow: true },
     { tag: 'BETTER DWELLING', url: 'https://betterdwelling.com/feed/', alwaysShow: true },
-    { tag: 'SARETSKY GROUP', url: 'https://www.saretskygroup.com/feed/', alwaysShow: true },
-    { tag: 'CITYHALLWATCH', url: 'https://cityhallwatch.wordpress.com/feed/', alwaysShow: true },
     { tag: 'CBC BC', url: 'https://www.cbc.ca/webfeed/rss/rss-canada-britishcolumbia', alwaysShow: false },
     { tag: 'BIV', url: 'https://biv.com/rss', alwaysShow: false },
-    { tag: 'CITY OF VANCOUVER', url: 'https://vancouver.ca/news-calendar/vancouver-news.rss', alwaysShow: false },
-    { tag: 'ESTATEBLOCK', url: 'https://www.estateblock.com/blog/feed', alwaysShow: false },
-    { tag: 'BC COURTS', url: 'https://www.bccourts.ca/rss.xml', alwaysShow: false }
+    { tag: 'CITY OF VANCOUVER', url: 'https://vancouver.ca/news-calendar/vancouver-news.rss', alwaysShow: false }
   ];
 
   const HOUSING_KEYWORDS = [
     'housing','real estate','rent','renter','tenant','condo','presale','pre-sale',
     'developer','development','rezon','zoning','mortgage','property','construction',
     'homeowner','affordab','strata','landlord','apartment','townhouse','build',
-    'interest rate','bank of canada','cmhc','vacancy','township','receivership',
-    'creditor protection','builders lien','foreclosure'
+    'interest rate','bank of canada','cmhc','vacancy'
   ];
 
   let allItems = [];
@@ -188,20 +183,37 @@
     return (tmp.textContent || '').trim();
   }
 
+  function textOf(parent, tag) {
+    const el = parent.querySelector(tag);
+    return el ? el.textContent.trim() : '';
+  }
+
   async function fetchFeed(feed) {
-    const proxyUrl = 'https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(feed.url);
+    const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(feed.url);
     try {
       const res = await fetch(proxyUrl);
-      const data = await res.json();
-      if (data.status !== 'ok') throw new Error('bad status');
-      return data.items.map(it => ({
-        title: it.title,
-        link: it.link,
-        pubDate: it.pubDate,
-        description: stripHtml(it.description).slice(0, 220),
-        tag: feed.tag,
-        alwaysShow: feed.alwaysShow
-      }));
+      const xmlText = await res.text();
+      const xml = new DOMParser().parseFromString(xmlText, 'text/xml');
+      if (xml.querySelector('parsererror')) throw new Error('bad xml');
+
+      // Supports both RSS <item> and Atom <entry>
+      const nodes = Array.from(xml.querySelectorAll('item, entry'));
+
+      return nodes.map(node => {
+        let link = textOf(node, 'link');
+        if (!link) {
+          const linkEl = node.querySelector('link');
+          link = linkEl ? (linkEl.getAttribute('href') || '') : '';
+        }
+        return {
+          title: textOf(node, 'title'),
+          link: link,
+          pubDate: textOf(node, 'pubDate') || textOf(node, 'published') || textOf(node, 'updated'),
+          description: stripHtml(textOf(node, 'description') || textOf(node, 'summary') || textOf(node, 'content')).slice(0, 220),
+          tag: feed.tag,
+          alwaysShow: feed.alwaysShow
+        };
+      });
     } catch (e) {
       console.error('Feed failed:', feed.tag, e);
       return [];
@@ -211,7 +223,7 @@
   async function loadAll() {
     const listEl = document.getElementById('nsc-list');
     const updatedEl = document.getElementById('nsc-updated');
-    listEl.innerHTML = '<div class="nsc-status">Scanning 9 BC housing sources…</div>';
+    listEl.innerHTML = '<div class="nsc-status">Scanning STOREYS, Better Dwelling, CBC BC, BIV, and City of Vancouver…</div>';
 
     const results = await Promise.all(FEEDS.map(fetchFeed));
     let items = results.flat();
@@ -250,7 +262,7 @@
       </a>
     `).join('') + '</div>';
 
-    document.getElementById('nsc-count').textContent = items.length + ' stories from 9 sources · click any headline to read';
+    document.getElementById('nsc-count').textContent = items.length + ' stories from 5 sources · click any headline to read';
   }
 
   function copyHeadlines() {
